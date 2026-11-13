@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paint Mixer</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,sans-serif;background:#f4f1ec;color:#222;padding:16px;max-width:620px;margin:auto}
+  h1{font-size:22px;margin:0 0 4px}
+  h2{font-size:16px;margin:18px 0 8px}
+  p.hint{font-size:13px;color:#666;margin:8px 0}
+  button,label.btn{background:#222;color:#fff;border:0;border-radius:10px;padding:11px 15px;font-size:15px;cursor:pointer;display:inline-block}
+  button.ghost{background:#ddd;color:#222}
+  button.small{padding:7px 11px;font-size:13px;border-radius:8px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  canvas{width:100%;border-radius:12px;background:#ddd;margin-top:10px;display:none}
+  .palette{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{width:88px;border:0;background:none;padding:0;cursor:pointer;text-align:center;color:#222}
+  .chip .dot{width:100%;height:44px;border-radius:9px;border:1px solid #0003}
+  .chip .nm{font-size:10.5px;line-height:1.2;margin-top:4px;display:block}
+  .paint{display:flex;align-items:center;gap:10px;background:#fff;border-radius:12px;padding:9px;margin:7px 0}
+  .sw{width:40px;height:40px;border-radius:8px;border:1px solid #0003;flex:none;cursor:pointer;padding:0;overflow:hidden;position:relative}
+  .sw input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+  .paint input[type=range]{flex:1;min-width:80px}
+  .parts{width:26px;text-align:center;font-weight:600}
+  .x{background:none;color:#a00;padding:4px 7px;font-size:17px;border-radius:8px}
+  #preview{height:130px;border-radius:14px;border:1px solid #0003;margin:10px 0 6px}
+  #hex{font-family:monospace;font-size:15px}
+  .tag{font-size:11px;color:#777;font-weight:400}
+  hr{border:0;border-top:1px solid #ddd;margin:18px 0}
+  .targetbox{background:#fff;border-radius:14px;padding:12px;margin-top:8px}
+  .ba{display:flex;gap:10px;align-items:stretch;margin:10px 0}
+  .ba .half{flex:1;text-align:center}
+  .ba .box{height:76px;border-radius:11px;border:1px solid #0003}
+  .ba .lab{font-size:11px;color:#666;margin-top:5px;letter-spacing:.03em;text-transform:uppercase}
+  .step{display:flex;align-items:center;gap:9px;margin:6px 0;font-size:14px}
+  .step .sw{width:26px;height:26px;border-radius:6px;border:1px solid #0003;flex:none;cursor:default}
+  .step .nm{flex:1}
+  .step .pt{font-weight:700}
+  .ratio{font-family:monospace;font-size:15px;background:#f2efe9;border-radius:8px;padding:8px 10px;display:block;margin:8px 0 4px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+  .score{font-size:13px;color:#444;margin-top:6px}
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;background:#e6f4ea;color:#1a6b34;margin-bottom:6px}
+  .badge.warn{background:#fdf0d5;color:#8a5a00}
+  .badge.bad{background:#fbe4e4;color:#8a1f1f}
+  canvas#tcv{margin-top:10px}
+</style>
+</head>
+<body>
+<h1>🎨 Paint Mixer</h1>
+<p class="hint">Add paints from the palette below, or sample them from a photo of your tubes. Then set how many parts of each you're mixing.</p>
+
+<h2>Palette <span class="tag">tap to add · Winsor &amp; Newton watercolour names, approximate</span></h2>
+<div class="palette" id="palette"></div>
+<div class="row" style="margin-top:10px">
+  <button class="ghost small" id="addAll">Add all nine</button>
+  <button class="ghost small" id="resetSwatches">Reset swatches</button>
+</div>
+
+<hr>
+
+<h2>From a photo</h2>
+<div class="row">
+  <label class="btn">📷 Take / choose photo
+    <input id="file" type="file" accept="image/*" capture="environment" hidden>
+  </label>
+  <button class="ghost" id="wb">Set white (next tap)</button>
+</div>
+<p class="hint">Photograph your tubes in daylight next to a sheet of white paper. Tap "Set white", tap the paper, then tap each paint.</p>
+<canvas id="cv"></canvas>
+
+<hr>
+
+<h2>Your paints</h2>
+<div id="list"></div>
+<div class="row">
+  <button class="ghost small" id="clear">Clear all paints</button>
+</div>
+
+<h2>Mixed result</h2>
+<div id="preview"></div>
+<div id="hex">Add at least one paint</div>
+
+<hr>
+
+<h2>Match any color 🎯</h2>
+<p class="hint">Photograph something in daylight beside a sheet of white paper, or pick a color by eye. The app searches your palette for the closest mix and tells you the parts to use.</p>
+<div class="targetbox">
+  <div class="row">
+    <label class="btn small">📷 Photo of the color
+      <input id="tfile" type="file" accept="image/*" capture="environment" hidden>
+    </label>
+    <label class="btn ghost small" style="cursor:pointer">🎨 Pick a color
+      <input id="tpick" type="color" value="#5a9bcd" hidden>
+    </label>
+    <button class="ghost small" id="twb">Set white (next tap)</button>
+  </div>
+  <canvas id="tcv"></canvas>
+  <div class="ba">
+    <div class="half"><div class="box" id="tTarget" style="background:#5a9bcd"></div><div class="lab">Target</div></div>
+    <div class="half"><div class="box" id="tBest" style="background:#eee"></div><div class="lab">Closest mix</div></div>
+  </div>
+  <div id="tOut"><p class="hint">No target yet — take a photo, tap the color in it, or use the picker.</p></div>
+</div>
+
+<script>
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d',{willReadFrequently:true});
+const list=document.getElementById('list'),preview=document.getElementById('preview');
+const hexEl=document.getElementById('hex'),paletteEl=document.getElementById('palette');
+let paints=[],whiteRef=null,settingWhite=false;
+
+/* ---- Reference swatches: Winsor & Newton watercolour names.
+        Approximate starting values - adjust with the swatch picker if your tube differs. ---- */
+const DEFAULT_PALETTE=[
+  {name:'Cadmium Yellow Hue', rgb:[255,204,0]},
+  {name:'Cadmium Yellow Lemon Hue', rgb:[246,232,110]},
+  {name:'Vermilion Hue', rgb:[227,66,52]},
+  {name:'Burnt Umber', rgb:[106,66,48]},
+  {name:'French Ultramarine', rgb:[52,74,150]},
+  {name:'Viridian Hue', rgb:[0,132,110]},
+  {name:'Dioxazine Purple', rgb:[62,36,96]},
+  {name:'Titanium White', rgb:[250,249,245]}
+];
+/* Cadmium Yellow Lemon Hue pulls yellower than the Cadmium Yellow Hue above; both kept distinct. */
+
+let palette=DEFAULT_PALETTE.map(p=>({name:p.name, rgb:p.rgb.slice()}));
+
+/* ---- colour maths ---- */
+const hex=c=>'#'+c.map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('');
+function toLin(v){v/=255;return v<=0.04045?v/12.92:Math.pow((v+0.055)/1.055,2.4)}
+function toSrgb(l){l=Math.max(0,Math.min(1,l));return 255*(l<=0.0031308?l*12.92:1.055*Math.pow(l,1/2.4)-0.055)}
+
+/* Pigment-like mixing: average in log-reflectance space, so blue + yellow -> green. */
+function mix(cols,weights){
+  const tot=weights.reduce((a,b)=>a+b,0);
+  if(!tot) return null;
+  const out=[0,0,0];
+  cols.forEach((col,i)=>{
+    if(weights[i]<=0) return;
+    col.forEach((v,j)=>{
+      out[j]+=(weights[i]/tot)*Math.log(Math.max(0.005,toLin(v)));
+    });
+  });
+  return out.map(v=>toSrgb(Math.exp(v)));
+}
+
+/* ---- palette ---- */
+function renderPalette(){
+  paletteEl.innerHTML='';
+  palette.forEach((p,i)=>{
+    const b=document.createElement('button');
+    b.className='chip';
+    b.innerHTML=`<div class="dot" style="background:${hex(p.rgb)}"></div><span class="nm">${p.name}</span>`;
+    b.onclick=()=>{paints.push({name:p.name,rgb:p.rgb.slice(),parts:1});render();};
+    paletteEl.appendChild(b);
+  });
+}
+
+/* ---- paints ---- */
+function render(){
+  list.innerHTML='';
+  if(!paints.length){
+    list.innerHTML='<p class="hint">No paints yet — tap a palette swatch above, or sample one from a photo.</p>';
+  }
+  paints.forEach((p,i)=>{
+    const d=document.createElement('div');d.className='paint';
+    d.innerHTML=`
+      <label class="sw" style="background:${hex(p.rgb)}">
+        <input type="color" value="${hex(p.rgb)}">
+      </label>
+      <div style="flex:1;min-width:90px">
+        <div style="font-size:13px;font-weight:600">${p.name}</div>
+        <input type="range" min="0" max="10" value="${p.parts}">
+      </div>
+      <div class="parts">${p.parts}</div>
+      <button class="x">✕</button>`;
+    d.querySelector('input[type=color]').oninput=e=>{
+      const h=e.target.value;
+      p.rgb=[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+      p.name=p.name.replace(' (edited)','')+' (edited)';
+      render();
+    };
+    d.querySelector('input[type=range]').oninput=e=>{p.parts=+e.target.value;render()};
+    d.querySelector('.x').onclick=()=>{paints.splice(i,1);render()};
+    list.appendChild(d);
+  });
+
+  const m=mix(paints.map(p=>p.rgb), paints.map(p=>p.parts));
+  if(m){preview.style.background=hex(m);
+    hexEl.textContent=`${hex(m).toUpperCase()}  ·  rgb(${m.map(v=>Math.round(v)).join(', ')})`;
+  } else {preview.style.background='#eee';hexEl.textContent='Add at least one paint';}
+}
+
+/* ---- photo sampling ---- */
+document.getElementById('file').onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const img=new Image();
+  img.onload=()=>{
+    const s=Math.min(1,1000/img.width);
+    cv.width=Math.round(img.width*s); cv.height=Math.round(img.height*s);
+    ctx.drawImage(img,0,0,cv.width,cv.height);
+    cv.style.display='block';
+  };
+  img.src=URL.createObjectURL(f);
+};
+
+function correct(c){
+  if(!whiteRef) return c;
+  return c.map((v,i)=>Math.min(255,v*255/Math.max(1,whiteRef[i])));
+}
+
+cv.addEventListener('click',e=>{
+  const r=cv.getBoundingClientRect();
+  const x=(e.clientX-r.left)*cv.width/r.width, y=(e.clientY-r.top)*cv.height/r.height;
+  const n=7;
+  const d=ctx.getImageData(Math.max(0,Math.round(x-n)),Math.max(0,Math.round(y-n)),n*2,n*2).data;
+  let R=0,G=0,B=0,c=d.length/4;
+  for(let i=0;i<d.length;i+=4){R+=d[i];G+=d[i+1];B+=d[i+2]}
+  const raw=[R/c,G/c,B/c];
+  if(settingWhite){
+    whiteRef=raw;settingWhite=false;
+    document.getElementById('wb').textContent='White set ✓';
+    paints.forEach(p=>{if(p.raw)p.rgb=correct(p.raw)});
+    render();return;
+  }
+  paints.push({name:'Sampled '+hex(correct(raw)).toUpperCase(),raw:raw,rgb:correct(raw),parts:1});
+  render();
+});
+
+document.getElementById('wb').onclick=()=>{
+  settingWhite=true;
+  document.getElementById('wb').textContent='Now tap a white area…';
+};
+document.getElementById('clear').onclick=()=>{paints=[];render()};
+document.getElementById('addAll').onclick=()=>{
+  palette.forEach(p=>paints.push({name:p.name,rgb:p.rgb.slice(),parts:1}));
+  render();
+};
+document.getElementById('resetSwatches').onclick=()=>{
+  palette=DEFAULT_PALETTE.map(p=>({name:p.name,rgb:p.rgb.slice()}));
+  renderPalette();
+};
+
+renderPalette();
+render();
+
+/* ============================================================
+   TARGET-COLOUR MATCHING
+   Search the palette for the mix closest to a target colour.
+   Same log-reflectance model as mix(), so the answer is a real
+   pigment mix rather than an RGB average.
+   ============================================================ */
+const tcv=document.getElementById('tcv'),tctx=tcv.getContext('2d',{willReadFrequently:true});
+const tOut=document.getElementById('tOut'),tTarget=document.getElementById('tTarget'),tBest=document.getElementById('tBest');
+let targetRGB=null,tWhiteRef=null,tSettingWhite=false;
+
+/* compare in log-reflectance too: differences there read closer to
+   how a painter sees them than raw RGB distance */
+const tlog=rgb=>rgb.map(v=>Math.log(Math.max(0.005,toLin(v))));
+const tdist=(a,b)=>{let s=0;for(let i=0;i<3;i++){const d=a[i]-b[i];s+=d*d}return s};
+
+/* palette in log-reflectance, recomputed live so edits to swatches count */
+function logs(){return palette.map(p=>tlog(p.rgb))}
+
+/* mix straight from weights, avoiding object churn in the search */
+function mixWeights(ws,L){
+  const t=ws.reduce((a,b)=>a+b,0);
+  if(!t) return null;
+  const out=[0,0,0];
+  for(let i=0;i<ws.length;i++){
+    if(ws[i]<=0) continue;
+    const f=ws[i]/t;
+    for(let j=0;j<3;j++) out[j]+=f*L[i][j];
+  }
+  return out.map(v=>toSrgb(Math.exp(v)));
+}
+
+function comps(total,k){
+  if(k===1) return [[total]];
+  const out=[];
+  for(let first=1;first<=total-k+1;first++)
+    for(const rest of comps(total-first,k-1)) out.push([first].concat(rest));
+  return out;
+}
+
+/* Exhaustive for 1-3 pigments with integer parts, then hill-climb on all
+   pigments. The cap keeps it to a few thousand evaluations - instant. */
+function solveTarget(tgt){
+  const T=tlog(tgt),L=logs(),n=palette.length;
+  let bestW=null,bestMix=null,bestE=Infinity;
+
+  const idx=[...Array(n).keys()];
+  const choose=(arr,k)=>{if(k===0)return [[]];const r=[];for(let i=0;i<arr.length;i++)for(const rest of choose(arr.slice(i+1),k-1))r.push([arr[i]].concat(rest));return r};
+  for(let k=1;k<=3;k++){
+    const cap=(k===1)?24:16;
+    for(const combo of choose(idx,k)){
+      for(let total=1;total<=cap;total++){
+        for(const parts of comps(total,k)){
+          const ws=new Array(n).fill(0);
+          combo.forEach((c,i)=>ws[c]=parts[i]);
+          const m=mixWeights(ws,L);
+          const e=tdist(tlog(m),T);
+          if(e<bestE){bestE=e;bestW=ws.slice();bestMix=m}
+        }
+      }
+    }
+  }
+  let improved=true;
+  while(improved){
+    improved=false;
+    for(let i=0;i<n;i++){
+      for(const d of [-3,-2,-1,1,2,3]){
+        const ws=bestW.slice();
+        ws[i]=Math.max(0,ws[i]+d);
+        const tot=ws.reduce((a,b)=>a+b,0);
+        if(tot===0||tot>24) continue;
+        const m=mixWeights(ws,L);
+        const e=tdist(tlog(m),T);
+        if(e<bestE-1e-12){bestE=e;bestW=ws;bestMix=m;improved=true}
+      }
+    }
+  }
+  return {ws:bestW,mix:bestMix,err:bestE};
+}
+
+/* roughness of a colour: how far it sits from the grey axis of the same
+   lightness. Used to explain a poor match. */
+function chroma(rgb){
+  const mx=Math.max(...rgb),mn=Math.min(...rgb);
+  return mx===0?0:(mx-mn)/mx;
+}
+
+function renderTarget(){
+  if(!targetRGB){return}
+  tTarget.style.background=hex(targetRGB);
+  const {ws,mix,err}=solveTarget(targetRGB);
+  const used=palette.map((p,i)=>({p,w:ws[i]})).filter(o=>o.w>0).sort((a,b)=>b.w-a.w);
+  const best=[Math.round(mix[0]),Math.round(mix[1]),Math.round(mix[2])];
+  tBest.style.background=hex(best);
+
+  const delta=Math.sqrt(err/3)*255/2.2;
+  let badge,cls;
+  if(delta<6){badge='Very close match';cls='badge'}
+  else if(delta<16){badge='Good match';cls='badge'}
+  else if(delta<34){badge='Approximate';cls='badge warn'}
+  else {badge='No close match in this palette';cls='badge bad'}
+
+  const total=ws.reduce((a,b)=>a+b,0);
+  const ratio=used.map(o=>`${o.p.name}  ${o.w}`).join('  :  ');
+  const parts=used.map(o=>o.w).join(':');
+
+  const notes=[];
+  const tc=chroma(targetRGB), mc=chroma(best);
+  if(tc>0.45 && mc<tc-0.18) notes.push('The target is more vivid than anything this palette can reach. Real paint rarely hits a screen-bright colour — the closest match will look duller.');
+  const tg=targetRGB.reduce((a,b)=>a+b,0)/3;
+  if(tg>200) notes.push('Very light targets usually need a lot of Titanium White; go heavier on white than the numbers suggest.');
+  if(tg<55) notes.push('Very dark targets may need more pigment or a touch of an earth to kill the brightness — white cannot darken.');
+  if(!palette.some(p=>/white/i.test(p.name))) notes.push('No white in the palette, so the mix cannot be tinted lighter.');
+
+  tOut.innerHTML=`
+    <div class="${cls}">${badge}</div>
+    <div class="score">Closest mix <b>${hex(best).toUpperCase()}</b> · target <b>${hex(targetRGB).toUpperCase()}</b> · average channel gap ≈ ${delta.toFixed(1)} of 255</div>
+    <span class="ratio">${ratio}</span>
+    <div class="score">Parts ${parts} — for example ${total} dollops/scoops total across ${used.length} paint${used.length>1?'s':''}.</div>
+    ${used.map(o=>`<div class="step"><span class="sw" style="background:${hex(o.p.rgb)}"></span>
+        <span class="nm">${o.p.name}</span><span class="pt">${o.w}</span></div>`).join('')}
+    ${notes.map(n=>`<p class="hint">⚠️ ${n}</p>`).join('')}
+    <div class="row" style="margin-top:10px">
+      <button class="small" id="useMix">Load this mix into "Your paints"</button>
+      <button class="ghost small" id="tryVivid">Try without white</button>
+    </div>`;
+
+  document.getElementById('useMix').onclick=()=>{
+    paints=used.map(o=>({name:o.p.name,rgb:o.p.rgb.slice(),parts:o.w}));
+    render();
+    document.querySelector('.targetbox').scrollIntoView({behavior:'smooth'});
+  };
+  document.getElementById('tryVivid').onclick=()=>{
+    const w=ws.map((v,i)=>/white/i.test(palette[i].name)?0:v);
+    if(w.reduce((a,b)=>a+b,0)===0) return;
+    const m=mixWeights(w,logs());
+    const alt=[Math.round(m[0]),Math.round(m[1]),Math.round(m[2])];
+    const ratio2=palette.map((p,i)=>({p,w:w[i]})).filter(o=>o.w>0).map(o=>`${o.p.name}  ${o.w}`).join('  :  ');
+    tOut.insertAdjacentHTML('beforeend',
+      `<p class="hint"><b>Without white:</b> ${hex(alt).toUpperCase()} — <code>${ratio2}</code></p>`);
+  };
+}
+
+/* ---- target photo ---- */
+document.getElementById('tfile').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const img=new Image();
+  img.onload=()=>{
+    const s=Math.min(1,1000/img.width);
+    tcv.width=Math.round(img.width*s);tcv.height=Math.round(img.height*s);
+    tctx.drawImage(img,0,0,tcv.width,tcv.height);
+    tcv.style.display='block';
+    tOut.innerHTML='<p class="hint">Now tap the color you want to match.</p>';
+  };
+  img.src=URL.createObjectURL(f);
+};
+document.getElementById('tpick').oninput=e=>{
+  const h=e.target.value;
+  targetRGB=[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];
+  renderTarget();
+};
+
+function tCorrect(c){
+  if(!tWhiteRef) return c;
+  return c.map((v,i)=>Math.min(255,v*255/Math.max(1,tWhiteRef[i])));
+}
+tcv.addEventListener('click',e=>{
+  const r=tcv.getBoundingClientRect();
+  const x=(e.clientX-r.left)*tcv.width/r.width, y=(e.clientY-r.top)*tcv.height/r.height;
+  const n=7;
+  const d=tctx.getImageData(Math.max(0,Math.round(x-n)),Math.max(0,Math.round(y-n)),n*2,n*2).data;
+  let R=0,G=0,B=0,c=d.length/4;
+  for(let i=0;i<d.length;i+=4){R+=d[i];G+=d[i+1];B+=d[i+2]}
+  const raw=[R/c,G/c,B/c];
+  if(tSettingWhite){
+    tWhiteRef=raw;tSettingWhite=false;
+    document.getElementById('twb').textContent='White set ✓';
+    if(targetRGB) renderTarget();
+    return;
+  }
+  targetRGB=tCorrect(raw);
+  renderTarget();
+});
+document.getElementById('twb').onclick=()=>{
+  tSettingWhite=true;
+  document.getElementById('twb').textContent='Now tap a white area…';
+};
+</script>
+</body>
+</html>
